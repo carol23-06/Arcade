@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ARI ARCADE 🎮</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+<style>
+:root{--bg:#0b0616;--c1:#00f0ff;--c2:#ff2bd6;--c3:#ffe600;--tx:#f4eeff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(#1c0f3a,var(--bg));color:var(--tx);font-family:ui-monospace,Menlo,monospace;min-height:100vh;text-align:center;padding:env(safe-area-inset-top) 12px 20px}
+h1{font-size:2.2rem;margin:.6em 0 0;color:var(--c1);text-shadow:0 0 12px var(--c1),3px 3px var(--c2)}
+p.s{color:var(--c3);margin:.2em 0 1em}
+.screen{display:none;max-width:420px;margin:auto}.screen.on{display:block;animation:in .3s}
+@keyframes in{from{opacity:0;transform:translateY(10px)}}
+button,input{font:inherit;color:var(--tx);background:#1a1030;border:2px solid var(--c1);border-radius:10px;padding:14px;margin:6px 0;width:100%;box-shadow:0 0 10px #00f0ff44}
+button:active{transform:scale(.97);background:var(--c2)}
+.card{border-color:var(--c2);box-shadow:0 0 10px #ff2bd644;font-size:1.1rem}
+input{text-align:center;text-transform:uppercase;letter-spacing:.4em;font-size:1.5rem}
+#c4{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;background:#1d3cff;padding:6px;border-radius:12px}
+#c4 i{aspect-ratio:1;border-radius:50%;background:var(--bg)}#c4 i.R{background:var(--c2)}#c4 i.Y{background:var(--c3)}
+#cols{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}#cols button{padding:8px 0;margin:0 0 4px}
+canvas{background:#000;border:2px solid var(--c1);max-width:100%;touch-action:none}
+#mem{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}#mem button{font-size:1.8rem;aspect-ratio:1;padding:0}
+.big{font-size:2.4rem;color:var(--c3);letter-spacing:.2em}
+</style></head><body>
+<h1>ARI ARCADE 🎮</h1><p class="s">Juega. Compite. Supérame.</p>
+
+<div id="who" class="screen on"><h3>¿Quién eres?</h3>
+<button class="card" onclick="login('Carolina')">CAROLINA</button>
+<button class="card" onclick="login('Ari')">ARI</button><p id="err" style="color:#f66"></p></div>
+
+<div id="menu" class="screen"><h3 id="hi"></h3>
+<button class="card" onclick="show('solo')">🎮 JUEGOS</button>
+<button class="card" onclick="show('lobby')">⚔️ ONLINE 1 VS 1</button>
+<button class="card" onclick="showRecords()">🏆 NUESTROS RÉCORDS</button>
+<button onclick="localStorage.clear();S.auth.signOut();show('who')">⚙️ CAMBIAR DE JUGADORA</button></div>
+
+<div id="solo" class="screen"><h3>JUEGOS</h3>
+<button class="card" onclick="startSnake()">🐍 SNAKE</button>
+<button class="card" onclick="startMem()">🃏 MEMORY 4x4</button>
+<button onclick="stopAll();show('menu')">← Volver</button></div>
+
+<div id="lobby" class="screen"><h3>🔴🟡 CONECTA 4 ONLINE</h3>
+<button class="card" onclick="createG()">Crear partida</button>
+<input id="code" maxlength="4" placeholder="A7K4">
+<button class="card" onclick="joinG()">Unirse a partida</button>
+<p id="lerr" style="color:#f66"></p><button onclick="show('menu')">← Volver</button></div>
+
+<div id="game" class="screen"><div class="big" id="gc"></div><p id="gs"></p>
+<div id="cols"></div><div id="c4"></div><button onclick="leave()">← Salir</button></div>
+
+<div id="snake" class="screen"><p>🐍 Puntos: <b id="sc">0</b> · Récord: <b id="hs">0</b></p>
+<canvas id="cv" width="320" height="320"></canvas><p id="sm">Desliza o usa flechas</p>
+<button onclick="startSnake()">Reiniciar</button><button onclick="stopAll();show('solo')">← Volver</button></div>
+
+<div id="memory" class="screen"><p id="mi">Movimientos: 0</p><div id="mem"></div>
+<button onclick="startMem()">Reiniciar</button><button onclick="show('solo')">← Volver</button></div>
+
+<div id="rec" class="screen"><h3>🏆 RÉCORDS</h3><div id="rl"></div><button onclick="show('menu')">← Volver</button></div>
+
+<script>
+// ⚠️ Pega aquí tu Project URL y la clave "anon/publishable" (pública por diseño, la seguridad va en RLS).
+const SUPABASE_URL='https://TU-PROYECTO.supabase.co', SUPABASE_KEY='TU_ANON_KEY';
+const S=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+let me,name,g,ch,snakeT,keyH;
+const $=id=>document.getElementById(id);
+function show(id){document.querySelectorAll('.screen').forEach(e=>e.classList.toggle('on',e.id===id))}
+function beep(f=440,d=.08){try{const a=new(window.AudioContext||webkitAudioContext)(),o=a.createOscillator();o.frequency.value=f;o.connect(a.destination);o.start();o.stop(a.currentTime+d)}catch(e){}}
+async function login(n){
+ try{let{data:{session}}=await S.auth.getSession();
+  if(!session){const r=await S.auth.signInAnonymously();if(r.error)throw r.error;session=r.data.session}
+  me=session.user.id;name=n;localStorage.name=n;
+  const r=await S.from('profiles').upsert({id:me,name:n});if(r.error)throw r.error;
+  $('hi').textContent='Hola, '+n.toUpperCase()+' 👾';show('menu');
+ }catch(e){$('err').textContent='Error: '+e.message}}
+if(localStorage.name)login(localStorage.name);
+function stopAll(){clearTimeout(snakeT);document.removeEventListener('keydown',keyH)}
+
+// ---------- ONLINE: CONECTA 4 ----------
+async function createG(){const r=await S.rpc('create_game');if(r.error)return $('lerr').textContent=r.error.message;enter(r.data)}
+async function joinG(){const r=await S.rpc('join_game',{c:$('code').value.trim()});if(r.error)return $('lerr').textContent=r.error.message;enter(r.data)}
+function enter(row){
+ g=row;show('game');
+ ch=S.channel('g'+g.id).on('postgres_changes',{event:'UPDATE',schema:'public',table:'games',filter:'id=eq.'+g.id},p=>{
+   const was=g.status;g=p.new;if(was==='waiting'&&g.status==='playing')beep(880);render()})
+  .subscribe(async st=>{if(st==='SUBSCRIBED'){const r=await S.from('games').select('*').eq('id',g.id).single();if(r.data){g=r.data;render()}}}); // resincroniza al (re)conectar
+ render()}
+function leave(){if(ch)S.removeChannel(ch);ch=null;show('lobby')}
+function render(){
+ $('gc').textContent=g.status==='waiting'?g.code:'';
+ const mine=g.p1===me?'R':'Y';
+ $('gs').textContent=g.status==='waiting'?'Esperando rival… comparte el código':
+  g.status==='playing'?(g.turn===me?'¡Tu turno! ('+(mine==='R'?'🔴':'🟡')+')':'Turno del rival…'):
+  g.status==='draw'?'TABLAS':(g.winner===me?'🏆 ¡VICTORIA!':'💀 Derrota');
+ $('cols').innerHTML=[0,1,2,3,4,5,6].map(c=>`<button onclick="play(${c})">▼</button>`).join('');
+ $('c4').innerHTML=[...g.board].map(ch=>`<i class="${ch==='.'?'':ch}"></i>`).join('');}
+async function play(c){if(g.status!=='playing'||g.turn!==me)return;const r=await S.rpc('drop_c4',{gid:g.id,col:c});
+ if(r.error)return $('gs').textContent=r.error.message;g=r.data;beep(300);render()}
+
+// ---------- SNAKE ----------
+function startSnake(){
+ stopAll();show('snake');const cv=$('cv'),x=cv.getContext('2d'),N=20,C=16;
+ let s=[[10,10],[9,10],[8,10]],d=[1,0],nd=d,f=[5,5],sc=0,t=140,dead=false;
+ const best0=+localStorage.snakeBest||0;$('hs').textContent=best0;$('sc').textContent=0;$('sm').textContent='Desliza o usa flechas';
+ keyH=e=>{const m={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]}[e.key];if(m&&(m[0]!==-d[0]||m[1]!==-d[1]))nd=m};
+ document.addEventListener('keydown',keyH);
+ let sx,sy;cv.ontouchstart=e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY};
+ cv.ontouchend=e=>{const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;
+  const m=Math.abs(dx)>Math.abs(dy)?[Math.sign(dx),0]:[0,Math.sign(dy)];if(m[0]!==-d[0]||m[1]!==-d[1])nd=m};
+ function tick(){
+  d=nd;const h=[s[0][0]+d[0],s[0][1]+d[1]];
+  if(h[0]<0||h[1]<0||h[0]>=N||h[1]>=N||s.some(p=>p[0]===h[0]&&p[1]===h[1]))return over();
+  s.unshift(h);
+  if(h[0]===f[0]&&h[1]===f[1]){sc+=10;t=Math.max(60,t-4);beep(700);$('sc').textContent=sc;
+   do f=[Math.random()*N|0,Math.random()*N|0];while(s.some(p=>p[0]===f[0]&&p[1]===f[1]))}else s.pop();
+  x.fillStyle='#000';x.fillRect(0,0,320,320);x.fillStyle='#ff2bd6';x.fillRect(f[0]*C+2,f[1]*C+2,C-4,C-4);
+  x.fillStyle='#00f0ff';s.forEach(p=>x.fillRect(p[0]*C+1,p[1]*C+1,C-2,C-2));snakeT=setTimeout(tick,t)}
+ async function over(){beep(120,.4);$('sm').textContent='💀 Game Over: '+sc;
+  if(sc>(+localStorage.snakeBest||0)){localStorage.snakeBest=sc;$('hs').textContent=sc}
+  if(sc>0)await S.from('scores').insert({game:'snake',score:sc})}
+ tick()}
+
+// ---------- MEMORY ----------
+function startMem(){
+ show('memory');const E=['🐙','🚀','🍕','👾','🎸','🌵','🦊','💛'];
+ let deck=[...E,...E].sort(()=>Math.random()-.5),open=[],mv=0,lock=false,done=0;
+ const box=$('mem');box.innerHTML='';$('mi').textContent='Movimientos: 0';
+ deck.forEach((e,i)=>{const b=document.createElement('button');b.textContent='❓';
+  b.onclick=()=>{if(lock||b.dataset.o)return;b.dataset.o=1;b.textContent=e;open.push(b);beep(500);
+   if(open.length===2){mv++;$('mi').textContent='Movimientos: '+mv;
+    if(open[0].textContent===open[1].textContent){open=[];if(++done===8){beep(900,.4);$('mi').textContent='🏆 ¡Completado en '+mv+' movimientos!'}}
+    else{lock=true;setTimeout(()=>{open.forEach(o=>{o.textContent='❓';delete o.dataset.o});open=[];lock=false},700)}}};
+  box.appendChild(b)})}
+
+// ---------- RÉCORDS ----------
+async function showRecords(){
+ show('rec');const [a,p]=await Promise.all([S.from('scores').select('uid,score').eq('game','snake'),S.from('profiles').select('id,name')]);
+ const nm=Object.fromEntries((p.data||[]).map(x=>[x.id,x.name]));const best={};
+ (a.data||[]).forEach(r=>{const n=nm[r.uid]||'?';best[n]=Math.max(best[n]||0,r.score)});
+ $('rl').innerHTML='<b>🐍 Snake</b><br>'+(Object.entries(best).map(([n,s])=>`${n} — ${s}`).join('<br>')||'Aún sin récords')}
+</script></body></html>
